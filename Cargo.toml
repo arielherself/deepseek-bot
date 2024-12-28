@@ -1,0 +1,12 @@
+[package]
+name = "deepseek-bot"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+log = "0.4.22"
+serde = "1.0.217"
+simple_logger = "5.0.0"
+teloxide = { version = "0.13", features = ["macros"] }
+tokio = { version =  "1.8", features = ["rt-multi-thread", "macros"] }
+toml = "0.8.19"
