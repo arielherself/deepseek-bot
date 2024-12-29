@@ -113,14 +113,14 @@ async fn inline_result_handler(bot: Bot, msg: ChosenInlineResult, api: DeepSeekA
     let query = msg.query;
     let inline_message_id = msg.inline_message_id.unwrap_or_default();
     log::debug!("inline message id = {}", inline_message_id.to_owned());
-    match retry_future!(bot.edit_message_text_inline(inline_message_id.to_owned(), format!("{}\n\n_Asking question\\.\\.\\._", query.to_owned()))
+    match retry_future!(bot.edit_message_text_inline(inline_message_id.to_owned(), format!("{}\n\n_Asking question\\.\\.\\._", escape_markdown(query.to_owned())))
         .parse_mode(ParseMode::MarkdownV2)
     ) {
         Ok(_) => {
             match retry_future!(api.single_message_dialog(query.to_owned())) {
                 Ok(reply) => {
                     log::debug!("received response from DeepSeek = {}", escape_markdown(reply.to_owned()));
-                    match retry_future!(bot.edit_message_text_inline(inline_message_id.to_owned(), format!("*Q: {}*\nA: {}", query, escape_markdown(reply.to_owned())))
+                    match retry_future!(bot.edit_message_text_inline(inline_message_id.to_owned(), format!("*Q: {}*\nA: {}", escape_markdown(query.to_owned()), escape_markdown(reply.to_owned())))
                         .parse_mode(ParseMode::MarkdownV2)
                     ) {
                         Ok(_) => {
