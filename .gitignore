@@ -26,6 +26,7 @@ Cargo.lock
 
 # test data
 config.toml
+trustedusers.toml
 
 # vim swapfiles
 **/*.swp

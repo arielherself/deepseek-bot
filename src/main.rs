@@ -1,5 +1,7 @@
+mod user;
+mod config;
+use config::Config;
 use deepseek::api::DeepSeekAPI;
-use serde::Deserialize;
 use teloxide::payloads::EditMessageTextInlineSetters;
 use teloxide::payloads::SendMessageSetters;
 use teloxide::RequestError;
@@ -10,12 +12,6 @@ use teloxide::utils::command::BotCommands;
 const MAX_RETRY: usize = 3;
 const TIMEOUT: u64 = 1000 * 60 * 3;
 
-#[derive(Deserialize)]
-struct Config {
-    telegram_bot_token: String,
-    deepseek_api_token: String,
-}
-
 #[derive(BotCommands, Clone)]
 #[command(rename_rule = "lowercase", description = "These commands are supported:")]
 enum Command {
@@ -25,6 +21,8 @@ enum Command {
     Die,
     #[command(description = "get account information")]
     Info,
+    #[command(description = "allow one user to query")]
+    Grant,
 }
 
 macro_rules! retry_future {
@@ -85,6 +83,13 @@ fn generate_keyboard() -> InlineKeyboardMarkup {
     }
 }
 
+fn check_user_valid(user: User) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
+    match user::check_uid(user.id.0.to_string())? {
+        user::Role::Untrusted => Ok(false),
+        _ => Ok(true),
+    }
+}
+
 async fn inline_handler(bot: Bot, msg: InlineQuery) -> ResponseResult<()> {
     log::debug!("called inline_handler");
     let cand: Vec<InlineQueryResult> = vec![InlineQueryResult::Article(InlineQueryResultArticle {
@@ -117,6 +122,24 @@ async fn inline_result_handler(bot: Bot, msg: ChosenInlineResult, api: DeepSeekA
         .parse_mode(ParseMode::MarkdownV2)
     ) {
         Ok(_) => {
+            let role = check_user_valid(msg.from.to_owned());
+            match role {
+                Ok(valid) => {
+                    if !valid {
+                        match retry_future!(bot.edit_message_text_inline(inline_message_id.to_owned(), format!("User does not have permission\\."))
+                            .parse_mode(ParseMode::MarkdownV2)
+                        ) {
+                            Ok(_) => (),
+                            Err(e) => log::error!("Error updating inline hint: {}", e),
+                        }
+                        return Ok(());
+                    }
+                }
+                Err(e) => {
+                    log::error!("Error when checking role: {}", e);
+                    return Ok(());
+                }
+            }
             match retry_future!(api.single_message_dialog(query.to_owned())) {
                 Ok(reply) => {
                     log::debug!("received response from DeepSeek = {}", escape_markdown(reply.to_owned()));
@@ -145,6 +168,25 @@ async fn inline_result_handler(bot: Bot, msg: ChosenInlineResult, api: DeepSeekA
 async fn chat_handler(bot: Bot, msg: Message, api: DeepSeekAPI) -> ResponseResult<()> {
     log::debug!("called chat_handler");
     if msg.via_bot != None {
+        return Ok(())
+    }
+    if let Some(user) = msg.to_owned().from {
+        match check_user_valid(user) {
+            Ok(valid) => {
+                if !valid {
+                    match retry_future!(reply_to_message(bot.to_owned(), msg.to_owned(), String::from("User doesn't have permission."))) {
+                        Ok(_) => (),
+                        Err(e) => log::error!("Error sending permission information: {}", e),
+                    }
+                    return Ok(());
+                }
+            }
+            Err(e) => {
+                log::error!("Error checking user permission: {}", e);
+                return Ok(());
+            }
+        }
+    } else {
         return Ok(())
     }
     match msg.text() {
@@ -189,13 +231,54 @@ async fn command_handler(bot: Bot, msg: Message, cmd: Command, api: DeepSeekAPI)
                 }
             }
         }
+        Command::Grant => {
+            if let Some(user) = msg.to_owned().from {
+                match user::check_uid(user.id.0.to_string()) {
+                    Ok(role) => {
+                        if matches!(role, user::Role::SuperUser) {
+                            match msg.to_owned().reply_to_message() {
+                                Some(replied) => {
+                                    if let Some(user) = replied.to_owned().from {
+                                        match config::add_trusted_user(user.id.0.to_string()) {
+                                            Ok(()) => match retry_future!(
+                                                reply_to_message(bot.to_owned(), msg.to_owned(), String::from("Successfully granted permission."))
+                                            ) {
+                                                Ok(_) => (),
+                                                Err(e) => log::error!("Cannot send message: {}", e),
+                                            },
+                                            Err(e) => log::error!("Cannot grant permission: {}", e),
+                                        }
+                                    }
+                                }
+                                None => {
+                                    match retry_future!(
+                                        reply_to_message(bot.to_owned(), msg.to_owned(), String::from("Please reply a message that's sent by another user."))
+                                    ) {
+                                        Ok(_) => (),
+                                        Err(e) => log::error!("Cannot send message: {}", e),
+                                    }
+                                }
+                            }
+                        } else {
+                            match retry_future!(
+                                reply_to_message(bot.to_owned(), msg.to_owned(), String::from("You are not a superuser."))
+                            ) {
+                                Ok(_) => (),
+                                Err(e) => log::error!("Cannot send message: {}", e),
+                            }
+                        }
+                    }
+                    Err(e) => log::error!("Error when checking user permission: {}", e)
+                }
+            }
+        }
     };
 
     Ok(())
 }
 
-async fn serve() -> Result<(), Box<dyn std::error::Error>> {
-    let config = toml::from_str::<Config>(std::fs::read_to_string("config.toml")?.as_str())?;
+async fn serve() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let config = config::get_config()?;
     log::info!("Read bot token = {}", config.telegram_bot_token);
 
     let bot = Bot::new(config.telegram_bot_token);

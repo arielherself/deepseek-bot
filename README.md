@@ -10,6 +10,11 @@ telegram_bot_token = "..."  # bot token from t.me/botfather
 deepseek_api_token = "..."  # DeepSeek api token from platform.deepseek.com
 ```
 
+```toml
+# trustedusers.toml to be put under repository root
+trusted_users = [...]  # a list of strings, representing trusted users' uids
+```
+
 The bot supports inline queries. You may need to enable this feature in your bot configuration at [@botfather](https://t.me/botfather).
 
 # Build
