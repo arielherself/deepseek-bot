@@ -9,7 +9,6 @@ use teloxide::utils::command::BotCommands;
 
 const MAX_RETRY: usize = 3;
 const TIMEOUT: u64 = 1000 * 60 * 3;
-const MAX_TOKENS: u64 = 2048;
 
 #[derive(Deserialize)]
 struct Config {
@@ -47,6 +46,7 @@ macro_rules! retry_future {
 /// ref:
 /// https://github.com/python-telegram-bot/python-telegram-bot/blob/4f255b6e21debd7ff5274400bf0d36e56bf169fa/telegram/helpers.py#L46
 fn escape_markdown(text: String) -> String {
+    let text = String::from(&text[..2048.min(text.len())]);
     const ESCAPE_CHARS: &str = r"\_*[]()~`>#+-=|{}.!";
     let escaped_pattern = regex::escape(ESCAPE_CHARS);
     let re = regex::Regex::new(&format!("([{}])", escaped_pattern)).unwrap();
@@ -116,7 +116,7 @@ async fn inline_result_handler(bot: Bot, msg: ChosenInlineResult, api: DeepSeekA
         .parse_mode(ParseMode::MarkdownV2)
     ) {
         Ok(_) => {
-            match retry_future!(api.single_message_dialog(query.to_owned(), MAX_TOKENS)){
+            match retry_future!(api.single_message_dialog(query.to_owned())) {
                 Ok(reply) => {
                     log::debug!("received response from DeepSeek = {}", escape_markdown(reply.to_owned()));
                     match retry_future!(bot.edit_message_text_inline(inline_message_id.to_owned(), format!("*Q: {}*\nA: {}", query, escape_markdown(reply.to_owned())))
@@ -150,7 +150,7 @@ async fn chat_handler(bot: Bot, msg: Message, api: DeepSeekAPI) -> ResponseResul
         Some(text) => {
             log::debug!("Received msg = {}", text);
             let mut response = String::from("You are seeing this message because there was an error when we communicate with DeepSeek. Check the log for details.");
-            match retry_future!(api.single_message_dialog(String::from(text), MAX_TOKENS)) {
+            match retry_future!(api.single_message_dialog(String::from(text))) {
                 Ok(reply) => {
                     log::debug!("received response from DeepSeek = {}", escape_markdown(reply.to_owned()));
                     response = reply;

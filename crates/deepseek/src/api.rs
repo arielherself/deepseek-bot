@@ -21,16 +21,15 @@ impl DeepSeekAPI {
         }
         Ok(ret)
     }
-    pub async fn single_message_dialog(&self, query: String, max_tokens: u64) -> Result<String, Box<dyn std::error::Error + Sync + Send>> {
+    pub async fn single_message_dialog(&self, query: String) -> Result<String, Box<dyn std::error::Error + Sync + Send>> {
         let client = reqwest::Client::new();
         let json_body = format!(r#"{{
             "model": "deepseek-chat",
             "messages": [
               {{"role": "user", "content": "{}"}}
             ],
-            "max_tokens": {}
             "stream": false
-        }}"#, query, max_tokens);
+        }}"#, query);
         let response = client.post("https://api.deepseek.com/chat/completions")
             .timeout(std::time::Duration::from_millis(self.timeout))
             .header("Content-Type", "application/json")
