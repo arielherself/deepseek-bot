@@ -46,7 +46,8 @@ macro_rules! retry_future {
 /// ref:
 /// https://github.com/python-telegram-bot/python-telegram-bot/blob/4f255b6e21debd7ff5274400bf0d36e56bf169fa/telegram/helpers.py#L46
 fn escape_markdown(text: String) -> String {
-    let text = String::from(&text[..2048.min(text.len())]);
+    // truncate the string to meet Telegram API requirement
+    let text = String::from_utf8_lossy(text.as_bytes().into_iter().cloned().take(2048).collect::<Vec<u8>>().as_slice()).to_string();
     const ESCAPE_CHARS: &str = r"\_*[]()~`>#+-=|{}.!";
     let escaped_pattern = regex::escape(ESCAPE_CHARS);
     let re = regex::Regex::new(&format!("([{}])", escaped_pattern)).unwrap();
