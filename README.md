@@ -15,7 +15,7 @@ The bot supports inline queries. You may need to enable this feature in your bot
 # Build
 
 This repository contains a `.envrc` file. If you have `nix` and `direnv` installed,
-entering the directory will let `direnv` automatically deploy the developement environment for you.
+entering the directory will let `direnv` automatically deploy the development environment for you.
 
 ```sh
 cargo run
