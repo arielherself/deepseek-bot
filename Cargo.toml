@@ -3,6 +3,11 @@ name = "deepseek-bot"
 version = "0.1.0"
 edition = "2021"
 
+[workspace]
+members = [
+    "crates/deepseek"
+]
+
 [dependencies]
 log = "0.4.22"
 regex = "1.11.1"
@@ -14,3 +19,4 @@ teloxide = { version = "0.13", features = ["macros"] }
 tokio = { version =  "1.8", features = ["full"] }
 toml = "0.8.19"
 url = "2.5.4"
+deepseek = { path = "crates/deepseek" }

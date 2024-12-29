@@ -1,5 +1,5 @@
+use deepseek::api::DeepSeekAPI;
 use serde::Deserialize;
-use serde::Serialize;
 use teloxide::payloads::EditMessageTextInlineSetters;
 use teloxide::payloads::SendMessageSetters;
 use teloxide::RequestError;
@@ -26,78 +26,6 @@ enum Command {
     Info,
 }
 
-#[derive(Deserialize)]
-struct DeepSeekCompletionProbabilityTop {
-    token: String,
-    logprob: i64,
-    bytes: Option<Vec<u8>>,
-}
-
-#[derive(Deserialize)]
-struct DeepSeekCompletionProbabilityInfo {
-    token: String,
-    logprob: i64,
-    bytes: Option<Vec<u8>>,
-    top_logprobs: Vec<DeepSeekCompletionProbabilityTop>,
-}
-
-#[derive(Deserialize)]
-struct DeepSeekCompletionProbability {
-    content: Option<Vec<DeepSeekCompletionProbabilityInfo>>,
-}
-
-#[derive(Deserialize)]
-struct DeepSeekCompletionMessageToolCallFunction {
-    name: String,
-    arguments: String,
-}
-
-#[derive(Deserialize)]
-struct DeepSeekCompletionMessageToolCall {
-    id: String,
-    function: DeepSeekCompletionMessageToolCallFunction,
-}
-
-#[derive(Deserialize)]
-struct DeepSeekCompletionMessage {
-    content: Option<String>,
-    tool_calls: Option<Vec<DeepSeekCompletionMessageToolCall>>,
-    role: String,
-}
-
-#[derive(Deserialize)]
-struct DeepSeekCompletionChoice {
-    finish_reason: String,
-    index: u64,
-    message: DeepSeekCompletionMessage,
-    logprobs: Option<DeepSeekCompletionProbability>,
-}
-
-/// ref: https://api-docs.deepseek.com/api/create-chat-completion
-#[derive(Deserialize)]
-struct DeepSeekChatResponse {
-    id: String,
-    choices: Vec<DeepSeekCompletionChoice>,
-    created: u64,
-    model: String,
-    system_fingerprint: String,
-    object: String,
-}
-
-#[derive(Deserialize)]
-struct DeepSeekUserBalanceInfo {
-    currency: String,
-    total_balance: String,
-    granted_balance: String,
-    topped_up_balance: String,
-}
-
-#[derive(Deserialize)]
-struct DeepSeekUserBalance {
-    is_available: bool,
-    balance_infos: Vec<DeepSeekUserBalanceInfo>,
-}
-
 macro_rules! retry_future {
     ($future:expr) => {{
         let mut result = $future.await;
@@ -112,55 +40,6 @@ macro_rules! retry_future {
         }
         result
     }};
-}
-
-struct DeepSeekAPI {
-    token: String,
-}
-
-
-impl DeepSeekAPI {
-    async fn get_balance(&self) -> Result<String, Box<dyn std::error::Error + Sync + Send>> {
-        let client = reqwest::Client::new();
-        let response = retry_future!(client.get("https://api.deepseek.com/user/balance")
-            .timeout(std::time::Duration::from_secs(10))
-            .header("Accept", "application/json")
-            .header("Authorization", format!("Bearer {}", self.token))
-            .send()
-        )?;
-        let payload = serde_json::from_str::<DeepSeekUserBalance>(response.text().await?.as_str())?;
-        let mut ret = format!("Available: {}\n", payload.is_available);
-        for info in payload.balance_infos {
-            ret.push_str(&format!("  Currency: {}\n  Total Balance: {}\n\n", info.currency, info.total_balance));
-        }
-        Ok(ret)
-    }
-    async fn single_message_dialog(&self, query: String) -> Result<String, Box<dyn std::error::Error + Sync + Send>> {
-        let client = reqwest::Client::new();
-        let json_body = format!(r#"{{
-            "model": "deepseek-chat",
-            "messages": [
-              {{"role": "user", "content": "{}"}}
-            ],
-            "stream": false
-        }}"#, query);
-        log::debug!("Sending request with body = {}", json_body.to_owned());
-        let response = retry_future!(client.post("https://api.deepseek.com/chat/completions")
-            .timeout(std::time::Duration::from_secs(10))
-            .header("Content-Type", "application/json")
-            .header("Authorization", format!("Bearer {}", self.token))
-            .body(json_body.to_owned())
-            .send()
-        )?;
-        let payload = serde_json::from_str::<DeepSeekChatResponse>(response.text().await?.as_str())?;
-        let mut ret = String::from("DeepSeek didn't provide any valid response to your query.");
-        if payload.choices.len() > 0 {
-            if let Some(text) = &payload.choices[0].message.content {
-                ret = text.as_str().to_string()
-            }
-        }
-        Ok(ret)
-    }
 }
 
 /// ref:
@@ -234,14 +113,14 @@ async fn inline_result_handler(bot: Bot, msg: ChosenInlineResult, api: DeepSeekA
     match retry_future!(bot.edit_message_text_inline(inline_message_id.to_owned(), format!("{}\n\n_Asking question\\.\\.\\._", query.to_owned()))
         .parse_mode(ParseMode::MarkdownV2)
     ) {
-        Ok(msg) => {
+        Ok(_) => {
             match retry_future!(api.single_message_dialog(query.to_owned())){
                 Ok(reply) => {
                     log::debug!("received response from DeepSeek = {}", escape_markdown(reply.to_owned()));
                     match retry_future!(bot.edit_message_text_inline(inline_message_id.to_owned(), format!("*Q: {}*\nA: {}", query, escape_markdown(reply.to_owned())))
                         .parse_mode(ParseMode::MarkdownV2)
                     ) {
-                        Ok(msg) => {
+                        Ok(_) => {
                             log::debug!("sent response = {}", escape_markdown(reply));
                             match retry_future!(bot.edit_message_reply_markup_inline(inline_message_id.to_owned())
                                 .reply_markup(generate_keyboard())) {
