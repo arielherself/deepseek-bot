@@ -8,6 +8,8 @@ use teloxide::prelude::*;
 use teloxide::utils::command::BotCommands;
 
 const MAX_RETRY: usize = 3;
+const TIMEOUT: u64 = 1000 * 60 * 3;
+const MAX_TOKENS: u64 = 2048;
 
 #[derive(Deserialize)]
 struct Config {
@@ -114,7 +116,7 @@ async fn inline_result_handler(bot: Bot, msg: ChosenInlineResult, api: DeepSeekA
         .parse_mode(ParseMode::MarkdownV2)
     ) {
         Ok(_) => {
-            match retry_future!(api.single_message_dialog(query.to_owned())){
+            match retry_future!(api.single_message_dialog(query.to_owned(), MAX_TOKENS)){
                 Ok(reply) => {
                     log::debug!("received response from DeepSeek = {}", escape_markdown(reply.to_owned()));
                     match retry_future!(bot.edit_message_text_inline(inline_message_id.to_owned(), format!("*Q: {}*\nA: {}", query, escape_markdown(reply.to_owned())))
@@ -148,7 +150,7 @@ async fn chat_handler(bot: Bot, msg: Message, api: DeepSeekAPI) -> ResponseResul
         Some(text) => {
             log::debug!("Received msg = {}", text);
             let mut response = String::from("You are seeing this message because there was an error when we communicate with DeepSeek. Check the log for details.");
-            match retry_future!(api.single_message_dialog(String::from(text))) {
+            match retry_future!(api.single_message_dialog(String::from(text), MAX_TOKENS)) {
                 Ok(reply) => {
                     log::debug!("received response from DeepSeek = {}", escape_markdown(reply.to_owned()));
                     response = reply;
@@ -205,7 +207,7 @@ async fn serve() -> Result<(), Box<dyn std::error::Error>> {
             Update::filter_chosen_inline_result().endpoint(move |bot: Bot, msg: ChosenInlineResult | {
                 let deepseek_api_token = deepseek_api_token3.to_owned();
                 async move {
-                    inline_result_handler(bot, msg, DeepSeekAPI { token: deepseek_api_token}).await
+                    inline_result_handler(bot, msg, DeepSeekAPI { token: deepseek_api_token, timeout: TIMEOUT }).await
                 }
             })
         ).branch(
@@ -214,14 +216,14 @@ async fn serve() -> Result<(), Box<dyn std::error::Error>> {
             Update::filter_message().filter_command::<Command>().endpoint(move |bot: Bot, msg: Message, cmd: Command| {
                 let deepseek_api_token = deepseek_api_token1.to_owned();
                 async move {
-                    command_handler(bot, msg, cmd, DeepSeekAPI { token: deepseek_api_token }).await
+                    command_handler(bot, msg, cmd, DeepSeekAPI { token: deepseek_api_token, timeout: TIMEOUT }).await
                 }
             }),
         ).branch(
             Update::filter_message().endpoint(move |bot: Bot, msg: Message| {
                 let deepseek_api_token = deepseek_api_token2.to_owned();
                 async move {
-                    chat_handler(bot, msg, DeepSeekAPI { token: deepseek_api_token }).await
+                    chat_handler(bot, msg, DeepSeekAPI { token: deepseek_api_token, timeout: TIMEOUT }).await
                 }
             }),
         )

@@ -2,13 +2,14 @@ use crate::types::*;
 
 pub struct DeepSeekAPI {
     pub token: String,
+    pub timeout: u64,
 }
 
 impl DeepSeekAPI {
     pub async fn get_balance(&self) -> Result<String, Box<dyn std::error::Error + Sync + Send>> {
         let client = reqwest::Client::new();
         let response = client.get("https://api.deepseek.com/user/balance")
-            .timeout(std::time::Duration::from_secs(10))
+            .timeout(std::time::Duration::from_millis(self.timeout))
             .header("Accept", "application/json")
             .header("Authorization", format!("Bearer {}", self.token))
             .send()
@@ -20,17 +21,18 @@ impl DeepSeekAPI {
         }
         Ok(ret)
     }
-    pub async fn single_message_dialog(&self, query: String) -> Result<String, Box<dyn std::error::Error + Sync + Send>> {
+    pub async fn single_message_dialog(&self, query: String, max_tokens: u64) -> Result<String, Box<dyn std::error::Error + Sync + Send>> {
         let client = reqwest::Client::new();
         let json_body = format!(r#"{{
             "model": "deepseek-chat",
             "messages": [
               {{"role": "user", "content": "{}"}}
             ],
+            "max_tokens": {}
             "stream": false
-        }}"#, query);
+        }}"#, query, max_tokens);
         let response = client.post("https://api.deepseek.com/chat/completions")
-            .timeout(std::time::Duration::from_secs(10))
+            .timeout(std::time::Duration::from_millis(self.timeout))
             .header("Content-Type", "application/json")
             .header("Authorization", format!("Bearer {}", self.token))
             .body(json_body.to_owned())
