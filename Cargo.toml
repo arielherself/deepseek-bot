@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 log = "0.4.22"
+regex = "1.11.1"
 reqwest = { version = "0.12", features = ["json"] }
 serde = "1.0.217"
 serde_json = "1.0.134"
@@ -12,3 +13,4 @@ simple_logger = "5.0.0"
 teloxide = { version = "0.13", features = ["macros"] }
 tokio = { version =  "1.8", features = ["full"] }
 toml = "0.8.19"
+url = "2.5.4"
