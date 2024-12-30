@@ -283,33 +283,39 @@ async fn serve() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     let bot = Bot::new(config.telegram_bot_token);
     let deepseek_api_token = config.deepseek_api_token;
-    let deepseek_api_token1 = deepseek_api_token.clone();
-    let deepseek_api_token2 = deepseek_api_token.clone();
-    let deepseek_api_token3 = deepseek_api_token.clone();
     Dispatcher::builder(bot, dptree::entry()
         .branch(
-            Update::filter_chosen_inline_result().endpoint(move |bot: Bot, msg: ChosenInlineResult | {
-                let deepseek_api_token = deepseek_api_token3.to_owned();
-                async move {
-                    inline_result_handler(bot, msg, DeepSeekAPI { token: deepseek_api_token, timeout: TIMEOUT }).await
-                }
-            })
+            {
+                let deepseek_api_token = deepseek_api_token.clone();
+                Update::filter_chosen_inline_result().endpoint(move |bot: Bot, msg: ChosenInlineResult | {
+                    let deepseek_api_token = deepseek_api_token.clone();
+                    async move {
+                        inline_result_handler(bot, msg, DeepSeekAPI { token: deepseek_api_token, timeout: TIMEOUT }).await
+                    }
+                })
+            }
         ).branch(
             Update::filter_inline_query().endpoint(inline_handler),
         ).branch(
-            Update::filter_message().filter_command::<Command>().endpoint(move |bot: Bot, msg: Message, cmd: Command| {
-                let deepseek_api_token = deepseek_api_token1.to_owned();
-                async move {
-                    command_handler(bot, msg, cmd, DeepSeekAPI { token: deepseek_api_token, timeout: TIMEOUT }).await
-                }
-            }),
+            {
+                let deepseek_api_token = deepseek_api_token.clone();
+                Update::filter_message().filter_command::<Command>().endpoint(move |bot: Bot, msg: Message, cmd: Command| {
+                    let deepseek_api_token = deepseek_api_token.clone();
+                    async move {
+                        command_handler(bot, msg, cmd, DeepSeekAPI { token: deepseek_api_token, timeout: TIMEOUT }).await
+                    }
+                })
+            }
         ).branch(
+        {
+            let deepseek_api_token = deepseek_api_token.clone();
             Update::filter_message().endpoint(move |bot: Bot, msg: Message| {
-                let deepseek_api_token = deepseek_api_token2.to_owned();
-                async move {
-                    chat_handler(bot, msg, DeepSeekAPI { token: deepseek_api_token, timeout: TIMEOUT }).await
-                }
-            }),
+                    let deepseek_api_token = deepseek_api_token.clone();
+                    async move {
+                        chat_handler(bot, msg, DeepSeekAPI { token: deepseek_api_token, timeout: TIMEOUT }).await
+                    }
+                })
+            }
         )
     ).enable_ctrlc_handler().build().dispatch().await;
 
