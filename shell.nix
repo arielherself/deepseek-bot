@@ -8,5 +8,6 @@ pkgs.mkShell {
     libiconv
     openssl
     pkg-config
+    python311
   ];
 }

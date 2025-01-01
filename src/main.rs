@@ -1,6 +1,8 @@
 mod user;
 mod config;
 use deepseek::api::DeepSeekAPI;
+use deepseek::search;
+use reqwest::Client;
 use teloxide::payloads::EditMessageTextInlineSetters;
 use teloxide::payloads::SendMessageSetters;
 use teloxide::RequestError;
@@ -9,8 +11,8 @@ use teloxide::prelude::*;
 use teloxide::utils::command::BotCommands;
 
 const MAX_RETRY: usize = 10;
-const TIMEOUT: u64 = 1000 * 60 * 3;
-const MAX_TOKEN: u64 = 1700;
+const TIMEOUT: u64 = 1000 * 60 * 10;
+const MAX_TOKEN: u64 = 512;
 
 #[derive(BotCommands, Clone)]
 #[command(rename_rule = "lowercase", description = "These commands are supported:")]
@@ -29,9 +31,10 @@ macro_rules! retry_future {
     ($future:expr) => {{
         let mut result = $future.await;
         if matches!(result, Err(_)) {
-            for _ in 1..MAX_RETRY {
+            for i in 1..MAX_RETRY {
+                log::debug!("Retrying: {}/{MAX_RETRY}", i + 1);
                 let new_result = $future.await;
-                if matches!(result, Ok(_)) {
+                if matches!(new_result, Ok(_)) {
                     result = new_result;
                     break;
                 }
@@ -140,10 +143,33 @@ async fn inline_result_handler(bot: Bot, msg: ChosenInlineResult, api: DeepSeekA
                     return Ok(());
                 }
             }
-            match retry_future!(api.single_message_dialog(MAX_TOKEN, query.to_owned())) {
+            let search_driver = search::SearchDriver::from(api.to_owned());
+            let need_search = retry_future!(search_driver.determine(query.to_owned()));
+            let system_prompt = match need_search {
+                Ok(need_search) => {
+                    if need_search {
+                        log::debug!("Search invoked.");
+                        let system_prompt = retry_future!(search_driver.search_and_summary(query.to_owned()));
+                        match system_prompt {
+                            Ok(system_prompt) => system_prompt,
+                            Err(e) => {
+                                log::error!("Error when fetching system prompt: {}", e);
+                                String::new()
+                            }
+                        }
+                    } else {
+                        String::new()
+                    }
+                },
+                Err(e) => {
+                    log::error!("Error when determining need_search: {}", e);
+                    String::new()
+                }
+            };
+            match retry_future!(api.single_message_dialog_with_system(MAX_TOKEN, query.to_owned(), system_prompt.to_owned())) {
                 Ok(reply) => {
                     log::debug!("received response from DeepSeek = {}", escape_markdown(reply.to_owned()));
-                    match retry_future!(bot.edit_message_text_inline(inline_message_id.to_owned(), format!("*Q: {}*\nA: {}", escape_markdown(query.to_owned()), escape_markdown(reply.to_owned())))
+                    match retry_future!(bot.edit_message_text_inline(inline_message_id.to_owned(), format!("*Q: {}*\nA: {}\n{}", escape_markdown(query.to_owned()), escape_markdown(reply.to_owned()), if system_prompt.len() > 0 { String::from("> Searching invoked\\. The answer may contain information from the Internet\\.") } else { String::new() }))
                         .parse_mode(ParseMode::MarkdownV2)
                     ) {
                         Ok(_) => {
@@ -281,16 +307,20 @@ async fn serve() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let config = config::get_config()?;
     log::info!("Read bot token = {}", config.telegram_bot_token);
 
+    let client = Client::new();
+
     let bot = Bot::new(config.telegram_bot_token);
     let deepseek_api_token = config.deepseek_api_token;
     Dispatcher::builder(bot, dptree::entry()
         .branch(
             {
                 let deepseek_api_token = deepseek_api_token.clone();
+                let client = client.clone();
                 Update::filter_chosen_inline_result().endpoint(move |bot: Bot, msg: ChosenInlineResult | {
                     let deepseek_api_token = deepseek_api_token.clone();
+                    let client = client.clone();
                     async move {
-                        inline_result_handler(bot, msg, DeepSeekAPI { token: deepseek_api_token, timeout: TIMEOUT }).await
+                        inline_result_handler(bot, msg, DeepSeekAPI { token: deepseek_api_token, timeout: TIMEOUT, client }).await
                     }
                 })
             }
@@ -299,20 +329,24 @@ async fn serve() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         ).branch(
             {
                 let deepseek_api_token = deepseek_api_token.clone();
+                let client = client.clone();
                 Update::filter_message().filter_command::<Command>().endpoint(move |bot: Bot, msg: Message, cmd: Command| {
                     let deepseek_api_token = deepseek_api_token.clone();
+                    let client = client.clone();
                     async move {
-                        command_handler(bot, msg, cmd, DeepSeekAPI { token: deepseek_api_token, timeout: TIMEOUT }).await
+                        command_handler(bot, msg, cmd, DeepSeekAPI { token: deepseek_api_token, timeout: TIMEOUT, client: client }).await
                     }
                 })
             }
         ).branch(
         {
-            let deepseek_api_token = deepseek_api_token.clone();
-            Update::filter_message().endpoint(move |bot: Bot, msg: Message| {
+                let deepseek_api_token = deepseek_api_token.clone();
+                let client = client.clone();
+                Update::filter_message().endpoint(move |bot: Bot, msg: Message| {
                     let deepseek_api_token = deepseek_api_token.clone();
+                    let client = client.clone();
                     async move {
-                        chat_handler(bot, msg, DeepSeekAPI { token: deepseek_api_token, timeout: TIMEOUT }).await
+                        chat_handler(bot, msg, DeepSeekAPI { token: deepseek_api_token, timeout: TIMEOUT, client: client }).await
                     }
                 })
             }
