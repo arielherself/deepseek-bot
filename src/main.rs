@@ -1,6 +1,5 @@
 mod user;
 mod config;
-use config::Config;
 use deepseek::api::DeepSeekAPI;
 use teloxide::payloads::EditMessageTextInlineSetters;
 use teloxide::payloads::SendMessageSetters;
@@ -9,8 +8,9 @@ use teloxide::types::*;
 use teloxide::prelude::*;
 use teloxide::utils::command::BotCommands;
 
-const MAX_RETRY: usize = 3;
+const MAX_RETRY: usize = 10;
 const TIMEOUT: u64 = 1000 * 60 * 3;
+const MAX_TOKEN: u64 = 1700;
 
 #[derive(BotCommands, Clone)]
 #[command(rename_rule = "lowercase", description = "These commands are supported:")]
@@ -140,7 +140,7 @@ async fn inline_result_handler(bot: Bot, msg: ChosenInlineResult, api: DeepSeekA
                     return Ok(());
                 }
             }
-            match retry_future!(api.single_message_dialog(query.to_owned())) {
+            match retry_future!(api.single_message_dialog(MAX_TOKEN, query.to_owned())) {
                 Ok(reply) => {
                     log::debug!("received response from DeepSeek = {}", escape_markdown(reply.to_owned()));
                     match retry_future!(bot.edit_message_text_inline(inline_message_id.to_owned(), format!("*Q: {}*\nA: {}", escape_markdown(query.to_owned()), escape_markdown(reply.to_owned())))
@@ -193,7 +193,7 @@ async fn chat_handler(bot: Bot, msg: Message, api: DeepSeekAPI) -> ResponseResul
         Some(text) => {
             log::debug!("Received msg = {}", text);
             let mut response = String::from("You are seeing this message because there was an error when we communicate with DeepSeek. Check the log for details.");
-            match retry_future!(api.single_message_dialog(String::from(text))) {
+            match retry_future!(api.single_message_dialog(MAX_TOKEN, String::from(text))) {
                 Ok(reply) => {
                     log::debug!("received response from DeepSeek = {}", escape_markdown(reply.to_owned()));
                     response = reply;
