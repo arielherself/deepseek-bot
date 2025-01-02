@@ -118,6 +118,7 @@ async fn inline_handler(bot: Bot, msg: InlineQuery) -> ResponseResult<()> {
 
 async fn inline_result_handler(bot: Bot, msg: ChosenInlineResult, api: DeepSeekAPI) -> ResponseResult<()> {
     log::debug!("called callback_handler");
+    let _ = api.get_balance().await;
     let query = msg.query;
     let inline_message_id = msg.inline_message_id.unwrap_or_default();
     log::debug!("inline message id = {}", inline_message_id.to_owned());
@@ -129,7 +130,7 @@ async fn inline_result_handler(bot: Bot, msg: ChosenInlineResult, api: DeepSeekA
             match role {
                 Ok(valid) => {
                     if !valid {
-                        match retry_future!(bot.edit_message_text_inline(inline_message_id.to_owned(), format!("User does not have permission\\."))
+                        match retry_future!(bot.edit_message_text_inline(inline_message_id.to_owned(), format!("*Q: {}*\n\n_User does not have permission\\._", escape_markdown(query.to_owned())))
                             .parse_mode(ParseMode::MarkdownV2)
                         ) {
                             Ok(_) => (),
