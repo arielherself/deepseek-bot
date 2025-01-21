@@ -29,11 +29,11 @@ impl SearchDriver {
         Self { api }
     }
     pub async fn determine(&self, query: String) -> Result<bool, Box<dyn std::error::Error + Sync + Send>> {
-        let res = self.api.single_message_dialog_with_system(20, query, String::from(DETERMINE_PROMPT)).await?.trim().to_string();
+        let res = self.api.single_message_dialog_with_system(20, query, String::from(DETERMINE_PROMPT), crate::types::DeepSeekModel::DeepSeekChat).await?.trim().to_string();
         Ok(res != "no")
     }
     pub async fn generate_search_term(&self, query: String) -> Result<String, Box<dyn std::error::Error + Sync + Send>> {
-        self.api.single_message_dialog_with_system(20, query, TERM_PROMPT.to_string()).await
+        self.api.single_message_dialog_with_system(20, query, TERM_PROMPT.to_string(), crate::types::DeepSeekModel::DeepSeekChat).await
     }
     /// Returns a system prompt
     pub async fn search_and_summary(&self, query: String) -> Result<String, Box<dyn std::error::Error + Sync + Send>> {
@@ -41,7 +41,7 @@ impl SearchDriver {
         let articles = search(term.to_owned(), self.api.client.clone()).await?;
         let mut summarized_content = String::new();
         for (index, article) in articles.into_iter().enumerate() {
-            if let Ok(summary) = self.api.single_message_dialog_with_system(100, article, SUMMARY_PROMPT.replace("{}", term.to_owned().as_str())).await {
+            if let Ok(summary) = self.api.single_message_dialog_with_system(100, article, SUMMARY_PROMPT.replace("{}", term.to_owned().as_str()), crate::types::DeepSeekModel::DeepSeekChat).await {
                 summarized_content.push_str(format!("Search order: {index}\nSummary: {summary}\n--------------------------------------------------------------------------------\n").as_str());
             }
         }

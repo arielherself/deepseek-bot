@@ -95,32 +95,59 @@ fn check_user_valid(user: User) -> Result<bool, Box<dyn std::error::Error + Send
 
 async fn inline_handler(bot: Bot, msg: InlineQuery) -> ResponseResult<()> {
     log::debug!("called inline_handler");
-    let cand: Vec<InlineQueryResult> = vec![InlineQueryResult::Article(InlineQueryResultArticle {
-        id: format!("arielherself"),
-        title: format!("Ask a question"),
-        input_message_content: InputMessageContent::Text(InputMessageContentText {
-            message_text: escape_markdown(msg.query.to_owned()),
-            parse_mode: Some(ParseMode::MarkdownV2),
-            entities: None,
-            link_preview_options: None,
+    let cand: Vec<InlineQueryResult> = vec![
+        InlineQueryResult::Article(InlineQueryResultArticle {
+            id: format!("chat"),
+            title: format!("Ask a question"),
+            input_message_content: InputMessageContent::Text(InputMessageContentText {
+                message_text: escape_markdown(msg.query.to_owned()),
+                parse_mode: Some(ParseMode::MarkdownV2),
+                entities: None,
+                link_preview_options: None,
+            }),
+            reply_markup: Some(generate_keyboard()),
+            url: None,
+            hide_url: None,
+            description: Some(msg.query.clone()),
+            thumbnail_url: Some(url::Url::parse("https://avatars.githubusercontent.com/u/148330874").unwrap()),
+            thumbnail_width: None,
+            thumbnail_height: None,
         }),
-        reply_markup: Some(generate_keyboard()),
-        url: None,
-        hide_url: None,
-        description: Some(msg.query),
-        thumbnail_url: Some(url::Url::parse("https://avatars.githubusercontent.com/u/148330874").unwrap()),
-        thumbnail_width: None,
-        thumbnail_height: None,
-    })];
+    
+        InlineQueryResult::Article(InlineQueryResultArticle {
+            id: format!("think"),
+            title: format!("Think hard"),
+            input_message_content: InputMessageContent::Text(InputMessageContentText {
+                message_text: escape_markdown(msg.query.to_owned()),
+                parse_mode: Some(ParseMode::MarkdownV2),
+                entities: None,
+                link_preview_options: None,
+            }),
+            reply_markup: Some(generate_keyboard()),
+            url: None,
+            hide_url: None,
+            description: Some(msg.query.clone()),
+            thumbnail_url: Some(url::Url::parse("https://avatars.githubusercontent.com/u/148330874").unwrap()),
+            thumbnail_width: None,
+            thumbnail_height: None,
+        }),
+    ];
     retry_future!(bot.answer_inline_query(msg.id.to_owned(), cand.to_owned()))?;
     Ok(())
 }
 
 async fn inline_result_handler(bot: Bot, msg: ChosenInlineResult, api: DeepSeekAPI) -> ResponseResult<()> {
     log::debug!("called callback_handler");
-    let _ = api.get_balance().await;
+    let _ = api.get_balance().await;  // warm-up connection
+    let model = if msg.result_id == "think" {
+        deepseek::types::DeepSeekModel::DeepSeekReasoner
+    } else {
+        deepseek::types::DeepSeekModel::DeepSeekChat
+    };
+    let query_type = msg.result_id;
     let query = msg.query;
     let inline_message_id = msg.inline_message_id.unwrap_or_default();
+    let mut tips = String::new();
     log::debug!("inline message id = {}", inline_message_id.to_owned());
     match retry_future!(bot.edit_message_text_inline(inline_message_id.to_owned(), format!("{}\n\n_Asking question\\.\\.\\._", escape_markdown(query.to_owned())))
         .parse_mode(ParseMode::MarkdownV2)
@@ -145,12 +172,17 @@ async fn inline_result_handler(bot: Bot, msg: ChosenInlineResult, api: DeepSeekA
                 }
             }
             let search_driver = search::SearchDriver::from(api.to_owned());
-            let need_search = retry_future!(search_driver.determine(query.to_owned()));
+            let need_search = if query_type == "think" {
+                Ok(false)
+            } else {
+                retry_future!(search_driver.determine(query.to_owned()))
+            };
             let system_prompt = match need_search {
                 Ok(need_search) => {
                     if need_search {
                         log::debug!("Search invoked.");
                         let system_prompt = retry_future!(search_driver.search_and_summary(query.to_owned()));
+                        tips = String::from("> Searching invoked\\. The answer may contain information from the Internet\\.");
                         match system_prompt {
                             Ok(system_prompt) => system_prompt,
                             Err(e) => {
@@ -167,10 +199,13 @@ async fn inline_result_handler(bot: Bot, msg: ChosenInlineResult, api: DeepSeekA
                     String::new()
                 }
             };
-            match retry_future!(api.single_message_dialog_with_system(MAX_TOKEN, query.to_owned(), system_prompt.to_owned())) {
+            if matches!(model, deepseek::types::DeepSeekModel::DeepSeekReasoner) {
+                tips = String::from("> This chat uses `deepseek-r1` model\\.")
+            }
+            match retry_future!(api.single_message_dialog_with_system(MAX_TOKEN, query.to_owned(), system_prompt.to_owned(), model.clone())) {
                 Ok(reply) => {
                     log::debug!("received response from DeepSeek = {}", escape_markdown(reply.to_owned()));
-                    match retry_future!(bot.edit_message_text_inline(inline_message_id.to_owned(), format!("*Q: {}*\nA: {}\n{}", escape_markdown(query.to_owned()), escape_markdown(reply.to_owned()), if system_prompt.len() > 0 { String::from("> Searching invoked\\. The answer may contain information from the Internet\\.") } else { String::new() }))
+                    match retry_future!(bot.edit_message_text_inline(inline_message_id.to_owned(), format!("*Q: {}*\nA: {}\n{}", escape_markdown(query.to_owned()), escape_markdown(reply.to_owned()), tips))
                         .parse_mode(ParseMode::MarkdownV2)
                     ) {
                         Ok(_) => {
@@ -220,7 +255,7 @@ async fn chat_handler(bot: Bot, msg: Message, api: DeepSeekAPI) -> ResponseResul
         Some(text) => {
             log::debug!("Received msg = {}", text);
             let mut response = String::from("You are seeing this message because there was an error when we communicate with DeepSeek. Check the log for details.");
-            match retry_future!(api.single_message_dialog(MAX_TOKEN, String::from(text))) {
+            match retry_future!(api.single_message_dialog(MAX_TOKEN, String::from(text), deepseek::types::DeepSeekModel::DeepSeekChat)) {
                 Ok(reply) => {
                     log::debug!("received response from DeepSeek = {}", escape_markdown(reply.to_owned()));
                     response = reply;

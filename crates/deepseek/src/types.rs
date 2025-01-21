@@ -72,5 +72,9 @@ pub struct DeepSeekUserBalance {
     pub balance_infos: Vec<DeepSeekUserBalanceInfo>,
 }
 
-
+#[derive(Clone)]
+pub enum DeepSeekModel {
+    DeepSeekChat,
+    DeepSeekReasoner,
+}
 

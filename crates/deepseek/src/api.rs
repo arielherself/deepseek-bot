@@ -32,19 +32,23 @@ impl DeepSeekAPI {
         }
         Ok(ret)
     }
-    pub async fn single_message_dialog(&self, max_tokens: u64, query: String) -> Result<String, Box<dyn std::error::Error + Sync + Send>> {
-        self.single_message_dialog_with_system(max_tokens, query, String::new()).await
+    pub async fn single_message_dialog(&self, max_tokens: u64, query: String, model: DeepSeekModel) -> Result<String, Box<dyn std::error::Error + Sync + Send>> {
+        self.single_message_dialog_with_system(max_tokens, query, String::new(), model).await
     }
-    pub async fn single_message_dialog_with_system(&self, max_tokens: u64, query: String, system: String) -> Result<String, Box<dyn std::error::Error + Sync + Send>> {
+    pub async fn single_message_dialog_with_system(&self, max_tokens: u64, query: String, system: String, model: DeepSeekModel) -> Result<String, Box<dyn std::error::Error + Sync + Send>> {
+        let model_name = match model {
+            DeepSeekModel::DeepSeekChat => "deepseek-chat",
+            DeepSeekModel::DeepSeekReasoner => "deepseek-reasoner",
+        };
         let json_body = format!(r#"{{
-            "model": "deepseek-chat",
+            "model": "{}",
             "max_tokens": {},
             "messages": [
               {{"role": "system", "content": {}}},
               {{"role": "user", "content": {}}}
             ],
             "stream": false
-        }}"#, max_tokens, serde_json::Value::String(system).to_string(), serde_json::Value::String(query).to_string());
+        }}"#, model_name, max_tokens, serde_json::Value::String(system).to_string(), serde_json::Value::String(query).to_string());
         eprintln!("{json_body}");
         let response = match self.client.post("https://api.deepseek.com/chat/completions")
             .timeout(std::time::Duration::from_millis(self.timeout))
