@@ -12,7 +12,7 @@ use teloxide::utils::command::BotCommands;
 
 const MAX_RETRY: usize = 10;
 const TIMEOUT: u64 = 1000 * 60 * 10;
-const MAX_TOKEN: u64 = 512;
+const MAX_TOKEN: u64 = 300;
 
 #[derive(BotCommands, Clone)]
 #[command(rename_rule = "lowercase", description = "These commands are supported:")]
